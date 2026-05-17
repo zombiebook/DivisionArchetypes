@@ -162,16 +162,281 @@ namespace DivisionArchetypes
         void Update()
         {
             if (Stats == null) return;
-            if (Type != Archetype.Support) return;
+
+            // Support: 주변 아군 회복
+            if (Type == Archetype.Support)
+            {
+                var character = GetComponent<CharacterMainControl>();
+                if (character == null || character.Health == null || character.Health.IsDead) return;
+
+                float now = Time.time;
+                if (now - SupportHealTimer > SUPPORT_HEAL_INTERVAL)
+                {
+                    SupportHealTimer = now;
+                    HealNearbyAllies(character);
+                }
+            }
+
+            // Rusher: 플레이어 근접 시 자폭
+            if (Type == Archetype.Rusher)
+            {
+                UpdateRusherExplosion();
+            }
+        }
+
+        // === Rusher 자폭 시스템 ===
+        private const float EXPLOSION_TRIGGER_RANGE = 5f;  // 점멸 시작 거리
+        private const float EXPLOSION_RANGE = 2.5f;        // 실제 폭발 거리
+        private const float EXPLOSION_DAMAGE = 40f;
+        private const float EXPLOSION_FUSE_TIME = 1.5f;    // 점멸 후 폭발까지 시간
+        private bool _hasExploded = false;
+        private bool _fuseStarted = false;
+        private float _fuseStartTime = 0f;
+
+        // Rusher 돌진 시스템
+        private static FieldInfo? _pathControlField = null;
+        private static MethodInfo? _moveToPosMethod = null;
+        private static bool _rushCacheInit = false;
+
+        void UpdateRusherExplosion()
+        {
+            if (_hasExploded) return;
 
             var character = GetComponent<CharacterMainControl>();
             if (character == null || character.Health == null || character.Health.IsDead) return;
 
-            float now = Time.time;
-            if (now - SupportHealTimer > SUPPORT_HEAL_INTERVAL)
+            var player = CharacterMainControl.Main;
+            if (player == null || player.Health == null || player.Health.IsDead) return;
+
+            float dist = Vector3.Distance(transform.position, player.transform.position);
+
+            // 항상 플레이어를 향해 돌진
+            RushTowardPlayer(character, player, dist);
+
+            // 점멸 시작 (트리거 범위 진입)
+            if (!_fuseStarted && dist <= EXPLOSION_TRIGGER_RANGE)
             {
-                SupportHealTimer = now;
-                HealNearbyAllies(character);
+                _fuseStarted = true;
+                _fuseStartTime = Time.time;
+            }
+
+            // 점멸 중: 빨간색 깜빡임
+            if (_fuseStarted && !_hasExploded)
+            {
+                float elapsed = Time.time - _fuseStartTime;
+                float blinkSpeed = Mathf.Lerp(4f, 15f, elapsed / EXPLOSION_FUSE_TIME);
+                bool blinkOn = Mathf.Sin(Time.time * blinkSpeed) > 0f;
+
+                ApplyBlinkEffect(character, blinkOn);
+
+                if (elapsed >= EXPLOSION_FUSE_TIME || dist <= EXPLOSION_RANGE)
+                {
+                    _hasExploded = true;
+                    DoExplosion(character, player);
+                }
+            }
+        }
+
+        void RushTowardPlayer(CharacterMainControl character, CharacterMainControl player, float dist)
+        {
+            // 30m 이내에서만 돌진
+            if (dist > 30f || dist < EXPLOSION_RANGE) return;
+
+            try
+            {
+                // AI PathControl 캐시 초기화
+                if (!_rushCacheInit)
+                {
+                    _rushCacheInit = true;
+                    var aiType = character.GetComponent<MonoBehaviour>()?.GetType();
+
+                    // AICharacterController에서 pathControl 찾기
+                    foreach (var comp in character.GetComponents<MonoBehaviour>())
+                    {
+                        if (comp == null) continue;
+                        var compType = comp.GetType();
+                        if (compType.Name == "AICharacterController" || compType.Name.Contains("AICharacter"))
+                        {
+                            var bf = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+                            _pathControlField = compType.GetField("pathControl", bf);
+                            break;
+                        }
+                    }
+
+                    // AI_PathControl.MoveToPos 메서드 찾기
+                    foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+                    {
+                        var pcType = asm.GetType("AI_PathControl");
+                        if (pcType != null)
+                        {
+                            _moveToPosMethod = pcType.GetMethod("MoveToPos",
+                                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                            break;
+                        }
+                    }
+                }
+
+                // PathControl을 통해 플레이어 위치로 이동
+                if (_pathControlField != null && _moveToPosMethod != null)
+                {
+                    foreach (var comp in character.GetComponents<MonoBehaviour>())
+                    {
+                        if (comp == null) continue;
+                        if (comp.GetType().Name == "AICharacterController" || comp.GetType().Name.Contains("AICharacter"))
+                        {
+                            var pathControl = _pathControlField.GetValue(comp);
+                            if (pathControl != null)
+                            {
+                                _moveToPosMethod.Invoke(pathControl, new object[] { player.transform.position });
+                            }
+                            break;
+                        }
+                    }
+                }
+                else
+                {
+                    // 폴백: 직접 transform 이동 (부드럽게)
+                    Vector3 dir = (player.transform.position - transform.position).normalized;
+                    transform.position += dir * Stats!.SpeedMult * 3f * Time.deltaTime;
+                }
+            }
+            catch { }
+        }
+
+        void ApplyBlinkEffect(CharacterMainControl character, bool redOn)
+        {
+            try
+            {
+                if (character.characterModel == null) return;
+
+                Renderer[] renderers = character.characterModel.GetComponentsInChildren<Renderer>(true);
+                if (renderers == null) return;
+
+                int emissionKey = Shader.PropertyToID("_EmissionColor");
+                Color emission = redOn ? new Color(3f, 0f, 0f, 1f) : Color.black;
+
+                foreach (var renderer in renderers)
+                {
+                    if (renderer == null) continue;
+                    Material[] materials = renderer.materials;
+                    foreach (var mat in materials)
+                    {
+                        if (mat == null) continue;
+                        if (mat.HasProperty(emissionKey))
+                        {
+                            mat.SetColor(emissionKey, emission);
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+
+        void DoExplosion(CharacterMainControl self, CharacterMainControl player)
+        {
+            try
+            {
+                // 폭발 이펙트
+                SpawnExplosionEffect(self.transform.position);
+
+                // 플레이어에게 데미지
+                if (player.Health != null && !player.Health.IsDead)
+                {
+                    float after = player.Health.CurrentHealth - EXPLOSION_DAMAGE;
+                    if (after < 1f) after = 1f;
+                    player.Health.CurrentHealth = after;
+                }
+
+                // 자기 자신 사망
+                if (self.Health != null && !self.Health.IsDead)
+                {
+                    self.Health.CurrentHealth = 0f;
+                }
+
+                try { player.PopText("BOOM! -" + EXPLOSION_DAMAGE + "HP", -1f); } catch { }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[DivisionArchetypes] DoExplosion FAILED: {ex.Message}");
+            }
+        }
+
+        void SpawnExplosionEffect(Vector3 position)
+        {
+            try
+            {
+                // 자체 폭발 이펙트 생성 (파티클 시스템)
+                var fxGO = new GameObject("RusherExplosion");
+                fxGO.transform.position = position;
+
+                // 메인 폭발 파티클
+                var ps = fxGO.AddComponent<ParticleSystem>();
+                var main = ps.main;
+                main.startLifetime = 0.5f;
+                main.startSpeed = 8f;
+                main.startSize = 1.5f;
+                main.startColor = new Color(1f, 0.5f, 0f, 1f);
+                main.maxParticles = 30;
+                main.duration = 0.3f;
+                main.loop = false;
+
+                var emission = ps.emission;
+                emission.rateOverTime = 0f;
+                emission.SetBursts(new ParticleSystem.Burst[] {
+                    new ParticleSystem.Burst(0f, 30)
+                });
+
+                var shape = ps.shape;
+                shape.shapeType = ParticleSystemShapeType.Sphere;
+                shape.radius = 0.5f;
+
+                var colorOverLifetime = ps.colorOverLifetime;
+                colorOverLifetime.enabled = true;
+                var gradient = new Gradient();
+                gradient.SetKeys(
+                    new GradientColorKey[] {
+                        new GradientColorKey(new Color(1f, 0.8f, 0.2f), 0f),
+                        new GradientColorKey(new Color(1f, 0.3f, 0f), 0.5f),
+                        new GradientColorKey(new Color(0.3f, 0.1f, 0f), 1f)
+                    },
+                    new GradientAlphaKey[] {
+                        new GradientAlphaKey(1f, 0f),
+                        new GradientAlphaKey(0.8f, 0.5f),
+                        new GradientAlphaKey(0f, 1f)
+                    }
+                );
+                colorOverLifetime.color = gradient;
+
+                var sizeOverLifetime = ps.sizeOverLifetime;
+                sizeOverLifetime.enabled = true;
+                sizeOverLifetime.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(
+                    new Keyframe(0f, 0.5f), new Keyframe(1f, 2f)
+                ));
+
+                // 렌더러 설정
+                var renderer = fxGO.GetComponent<ParticleSystemRenderer>();
+                if (renderer != null)
+                {
+                    renderer.material = new Material(Shader.Find("Particles/Standard Unlit"));
+                    renderer.material.color = new Color(1f, 0.6f, 0.1f, 1f);
+                }
+
+                // 라이트 추가
+                var lightGO = new GameObject("ExplosionLight");
+                lightGO.transform.position = position;
+                lightGO.transform.SetParent(fxGO.transform);
+                var light = lightGO.AddComponent<Light>();
+                light.type = LightType.Point;
+                light.color = new Color(1f, 0.5f, 0f);
+                light.intensity = 5f;
+                light.range = 12f;
+
+                ps.Play();
+                UnityEngine.Object.Destroy(fxGO, 2f);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[DivisionArchetypes] SpawnExplosionEffect error: {ex.Message}");
             }
         }
 
@@ -281,6 +546,29 @@ namespace DivisionArchetypes
             {
                 Destroy(this);
                 return;
+            }
+
+            // 동물/펫/상인/더미 제외
+            string name = gameObject.name.ToLower();
+            if (name.Contains("pet") || name.Contains("animal") || name.Contains("dog") ||
+                name.Contains("cat") || name.Contains("merchant") || name.Contains("dummy") ||
+                name.Contains("npc") || name.Contains("civilian") || name.Contains("friend"))
+            {
+                Destroy(this);
+                return;
+            }
+
+            // CharacterRandomPreset 체크 (동물 프리셋 제외)
+            if (character.characterPreset != null)
+            {
+                string presetName = character.characterPreset.name ?? "";
+                if (presetName.Contains("Animal") || presetName.Contains("Pet") ||
+                    presetName.Contains("Dog") || presetName.Contains("Cat") ||
+                    presetName.Contains("Merchant") || presetName.Contains("Dummy"))
+                {
+                    Destroy(this);
+                    return;
+                }
             }
 
             ApplyArchetype(character);
@@ -655,15 +943,12 @@ namespace DivisionArchetypes
     [HarmonyPatch(typeof(Health), "Hurt")]
     public static class Health_Hurt_DamageMult_Patch
     {
-        // 아머 흡수량을 Prefix→Postfix로 전달
         [HarmonyPrefix]
-        static void Prefix(Health __instance, object damageInfo, ref float __state)
+        static bool Prefix(Health __instance, object damageInfo)
         {
-            __state = 0f; // 아머가 흡수할 데미지량
-
             try
             {
-                if (damageInfo == null) return;
+                if (damageInfo == null) return true;
 
                 var bf = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
                 var dmgField = damageInfo.GetType().GetField("damageValue", bf);
@@ -684,7 +969,7 @@ namespace DivisionArchetypes
                     }
                 }
 
-                // 2) 플레이어가 적을 공격: 아머 흡수량 계산
+                // 2) 아머 시스템: 아머가 남아있으면 Hurt 자체를 차단
                 var victim = __instance.GetComponent<CharacterMainControl>();
                 if (victim != null && victim != CharacterMainControl.Main)
                 {
@@ -694,26 +979,24 @@ namespace DivisionArchetypes
                         float currentDmg = (float)dmgField.GetValue(damageInfo);
                         float absorbed = Mathf.Min(currentDmg, marker.CurrentArmor);
                         marker.CurrentArmor -= absorbed;
-                        __state = absorbed; // Postfix에서 체력 복구할 양
+                        float remaining = currentDmg - absorbed;
+
+                        if (remaining <= 0f)
+                        {
+                            // 아머가 전부 흡수 → HP 데미지 없음, Hurt 스킵
+                            return false;
+                        }
+                        else
+                        {
+                            // 초과분만 HP로 전달
+                            dmgField.SetValue(damageInfo, remaining);
+                        }
                     }
                 }
             }
             catch { }
-        }
 
-        // 아머가 흡수한 만큼 체력 복구 (데미지 무효화)
-        [HarmonyPostfix]
-        static void Postfix(Health __instance, float __state)
-        {
-            try
-            {
-                if (__state <= 0f) return;
-                if (__instance == null || __instance.IsDead) return;
-
-                // 아머가 흡수한 만큼 즉시 체력 복구
-                __instance.AddHealth(__state);
-            }
-            catch { }
+            return true; // Hurt 실행 허용
         }
     }
 }
