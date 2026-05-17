@@ -954,7 +954,7 @@ namespace DivisionArchetypes
                 var dmgField = damageInfo.GetType().GetField("damageValue", bf);
                 var attackerField = damageInfo.GetType().GetField("fromCharacter", bf);
 
-                // 1) 적이 플레이어를 공격: 아키타입 데미지 배율 적용
+                // 적이 플레이어를 공격: 아키타입 데미지 배율 적용
                 if (attackerField != null)
                 {
                     var attacker = attackerField.GetValue(damageInfo) as CharacterMainControl;
@@ -969,7 +969,7 @@ namespace DivisionArchetypes
                     }
                 }
 
-                // 2) 아머 시스템: 아머가 남아있으면 Hurt 자체를 차단
+                // 아머 시스템: 아머가 남아있으면 Hurt 차단
                 var victim = __instance.GetComponent<CharacterMainControl>();
                 if (victim != null && victim != CharacterMainControl.Main)
                 {
@@ -983,12 +983,10 @@ namespace DivisionArchetypes
 
                         if (remaining <= 0f)
                         {
-                            // 아머가 전부 흡수 → HP 데미지 없음, Hurt 스킵
-                            return false;
+                            return false; // 아머가 전부 흡수, HP 무피해
                         }
                         else
                         {
-                            // 초과분만 HP로 전달
                             dmgField.SetValue(damageInfo, remaining);
                         }
                     }
@@ -996,7 +994,7 @@ namespace DivisionArchetypes
             }
             catch { }
 
-            return true; // Hurt 실행 허용
+            return true;
         }
     }
 }
