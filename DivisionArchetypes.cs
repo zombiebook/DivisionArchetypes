@@ -57,19 +57,19 @@ namespace DivisionArchetypes
 
     public static class ArchetypeConfig
     {
-        // 아키타입별 스탯 배율
+        // 아키타입별 스탯 배율 (hp, speed, damage, aggro, armor, icon, color)
         public static readonly Dictionary<Archetype, ArchetypeStats> Stats = new Dictionary<Archetype, ArchetypeStats>
         {
-            [Archetype.Assault]    = new ArchetypeStats(1.0f, 1.0f, 1.0f, 1.0f, "▌", new Color(0.8f, 0.8f, 0.8f)),
-            [Archetype.Rusher]    = new ArchetypeStats(0.6f, 1.8f, 0.8f, 1.3f, "⚡", new Color(1f, 0.4f, 0.1f)),
-            [Archetype.Tank]      = new ArchetypeStats(3.0f, 0.6f, 0.7f, 0.8f, "🛡", new Color(0.3f, 0.3f, 1f)),
-            [Archetype.Sniper]    = new ArchetypeStats(0.7f, 0.7f, 2.5f, 0.5f, "◎", new Color(0.9f, 0.1f, 0.1f)),
-            [Archetype.Support]   = new ArchetypeStats(0.8f, 1.0f, 0.6f, 1.0f, "✚", new Color(0.2f, 1f, 0.2f)),
-            [Archetype.Thrower]   = new ArchetypeStats(0.8f, 1.0f, 1.5f, 0.9f, "●", new Color(1f, 0.6f, 0f)),
-            [Archetype.Controller]= new ArchetypeStats(0.9f, 0.9f, 1.3f, 0.8f, "◈", new Color(0.7f, 0.3f, 1f)),
-            [Archetype.Heavy]     = new ArchetypeStats(2.0f, 0.7f, 1.8f, 0.7f, "▼", new Color(0.5f, 0.2f, 0.1f)),
-            [Archetype.Leader]    = new ArchetypeStats(1.5f, 1.0f, 1.2f, 1.0f, "★", new Color(1f, 0.85f, 0f)),
-            [Archetype.Scout]     = new ArchetypeStats(0.5f, 1.5f, 1.0f, 1.4f, "◇", new Color(0.4f, 0.9f, 0.9f)),
+            [Archetype.Assault]    = new ArchetypeStats(1.0f, 1.0f, 1.0f, 1.0f, 0f,    "▌", new Color(0.8f, 0.8f, 0.8f)),
+            [Archetype.Rusher]    = new ArchetypeStats(0.6f, 1.8f, 0.8f, 1.3f, 0f,    "⚡", new Color(1f, 0.4f, 0.1f)),
+            [Archetype.Tank]      = new ArchetypeStats(3.0f, 0.6f, 0.7f, 0.8f, 200f,  "🛡", new Color(0.3f, 0.3f, 1f)),
+            [Archetype.Sniper]    = new ArchetypeStats(0.7f, 0.7f, 2.5f, 0.5f, 0f,    "◎", new Color(0.9f, 0.1f, 0.1f)),
+            [Archetype.Support]   = new ArchetypeStats(0.8f, 1.0f, 0.6f, 1.0f, 50f,   "✚", new Color(0.2f, 1f, 0.2f)),
+            [Archetype.Thrower]   = new ArchetypeStats(0.8f, 1.0f, 1.5f, 0.9f, 0f,    "●", new Color(1f, 0.6f, 0f)),
+            [Archetype.Controller]= new ArchetypeStats(0.9f, 0.9f, 1.3f, 0.8f, 50f,   "◈", new Color(0.7f, 0.3f, 1f)),
+            [Archetype.Heavy]     = new ArchetypeStats(2.0f, 0.7f, 1.8f, 0.7f, 150f,  "▼", new Color(0.5f, 0.2f, 0.1f)),
+            [Archetype.Leader]    = new ArchetypeStats(1.5f, 1.0f, 1.2f, 1.0f, 100f,  "★", new Color(1f, 0.85f, 0f)),
+            [Archetype.Scout]     = new ArchetypeStats(0.5f, 1.5f, 1.0f, 1.4f, 0f,    "◇", new Color(0.4f, 0.9f, 0.9f)),
         };
 
         // 가중치 (일반 적이 더 많이 나오도록)
@@ -109,15 +109,17 @@ namespace DivisionArchetypes
         public float SpeedMult;     // 이동속도 배율
         public float DamageMult;    // 데미지 배율
         public float AggroRange;    // 어그로 범위 배율
+        public float ArmorAmount;   // 아머량 (0 = 없음)
         public string Icon;         // 표시 아이콘
         public Color GlowColor;    // 발광 색상
 
-        public ArchetypeStats(float hp, float spd, float dmg, float aggro, string icon, Color color)
+        public ArchetypeStats(float hp, float spd, float dmg, float aggro, float armor, string icon, Color color)
         {
             HealthMult = hp;
             SpeedMult = spd;
             DamageMult = dmg;
             AggroRange = aggro;
+            ArmorAmount = armor;
             Icon = icon;
             GlowColor = color;
         }
@@ -130,6 +132,11 @@ namespace DivisionArchetypes
         public ArchetypeStats? Stats;
         public float SupportHealTimer = 0f;
         public float LeaderBuffTimer = 0f;
+
+        // 아머 시스템
+        public float MaxArmor = 0f;
+        public float CurrentArmor = 0f;
+        public bool HasArmor => MaxArmor > 0f && CurrentArmor > 0f;
 
         private const float SUPPORT_HEAL_INTERVAL = 3f;
         private const float SUPPORT_HEAL_AMOUNT = 5f;
@@ -168,28 +175,59 @@ namespace DivisionArchetypes
             }
         }
 
+        /// <summary>
+        /// 아머에 데미지 적용. 남은 데미지 반환 (아머가 흡수 못한 부분)
+        /// </summary>
+        public float AbsorbDamage(float damage)
+        {
+            if (CurrentArmor <= 0f) return damage;
+
+            if (damage <= CurrentArmor)
+            {
+                CurrentArmor -= damage;
+                return 0f; // 아머가 전부 흡수
+            }
+            else
+            {
+                float remaining = damage - CurrentArmor;
+                CurrentArmor = 0f;
+                return remaining; // 남은 데미지는 HP로
+            }
+        }
+
         void HealNearbyAllies(CharacterMainControl self)
         {
             try
             {
-                Collider[] nearby = Physics.OverlapSphere(transform.position, 8f);
-                foreach (var col in nearby)
+                // AllMarkers 리스트에서 주변 아군 찾기 (Physics 대신)
+                foreach (var other in AllMarkers)
                 {
-                    if (col == null) continue;
-                    var other = col.GetComponentInParent<CharacterMainControl>();
-                    if (other == null || other == self || other == CharacterMainControl.Main) continue;
-                    if (other.Health == null || other.Health.IsDead) continue;
+                    if (other == null || other == this) continue;
 
+                    var otherChar = other.GetComponent<CharacterMainControl>();
+                    if (otherChar == null || otherChar == self || otherChar == CharacterMainControl.Main) continue;
+                    if (otherChar.Health == null || otherChar.Health.IsDead) continue;
+
+                    float dist = Vector3.Distance(transform.position, other.transform.position);
+                    if (dist > 8f) continue;
+
+                    // 체력 회복 (AddHealth)
                     try
                     {
-                        var addHealthMethod = typeof(Health).GetMethod("AddHealth",
-                            BindingFlags.Public | BindingFlags.Instance);
-                        if (addHealthMethod != null)
-                        {
-                            addHealthMethod.Invoke(other.Health, new object[] { SUPPORT_HEAL_AMOUNT });
-                        }
+                        otherChar.Health.AddHealth(SUPPORT_HEAL_AMOUNT);
                     }
-                    catch { }
+                    catch
+                    {
+                        // AddHealth가 직접 호출 안 되면 리플렉션
+                        try
+                        {
+                            var addHp = typeof(Health).GetMethod("AddHealth",
+                                BindingFlags.Public | BindingFlags.Instance);
+                            if (addHp != null)
+                                addHp.Invoke(otherChar.Health, new object[] { SUPPORT_HEAL_AMOUNT });
+                        }
+                        catch { }
+                    }
                 }
             }
             catch { }
@@ -260,6 +298,13 @@ namespace DivisionArchetypes
                 var marker = gameObject.AddComponent<ArchetypeMarker>();
                 marker.Type = type;
                 marker.Stats = stats;
+
+                // 아머 설정
+                if (stats.ArmorAmount > 0f)
+                {
+                    marker.MaxArmor = stats.ArmorAmount;
+                    marker.CurrentArmor = stats.ArmorAmount;
+                }
 
                 // 스탯 적용
                 ApplyStats(character, stats, type);
@@ -568,42 +613,105 @@ namespace DivisionArchetypes
                 _nameStyle.normal.textColor = marker.Stats.GlowColor;
                 GUI.Label(new Rect(iconX + iconSize + 4, iconY + 2, 80 * scale, iconSize),
                     marker.Type.ToString(), _nameStyle);
+
+                // === 아머바 표시 (하얀 점선, HP바 위) ===
+                if (marker.MaxArmor > 0f && marker.CurrentArmor > 0f)
+                {
+                    float barWidth = 60f * scale;
+                    float barHeight = 6f * scale;
+                    float barX = x - barWidth * 0.5f;
+                    float barY = y - iconSize - barHeight - 4f;
+
+                    float armorRatio = marker.CurrentArmor / marker.MaxArmor;
+
+                    // 배경 (어두운)
+                    if (_bgTex != null)
+                        GUI.DrawTexture(new Rect(barX - 1, barY - 1, barWidth + 2, barHeight + 2), _bgTex);
+
+                    // 아머바 (하얀 점선 느낌 - 세그먼트로 표현)
+                    int segments = 8;
+                    float segWidth = barWidth / segments;
+                    float gap = 2f * scale;
+                    int filledSegments = Mathf.CeilToInt(armorRatio * segments);
+
+                    Color armorColor = new Color(1f, 1f, 1f, 0.9f);
+                    Texture2D whiteTex = Texture2D.whiteTexture;
+
+                    for (int i = 0; i < filledSegments && i < segments; i++)
+                    {
+                        float segX = barX + i * segWidth + gap * 0.5f;
+                        float segW = segWidth - gap;
+                        if (segW < 1f) segW = 1f;
+
+                        GUI.color = armorColor;
+                        GUI.DrawTexture(new Rect(segX, barY, segW, barHeight), whiteTex);
+                    }
+                    GUI.color = Color.white;
+                }
             }
         }
     }
-    // === 데미지 수정: 아키타입별 데미지 배율 적용 ===
+    // === 데미지 수정: 아키타입별 데미지 배율 + 아머 시스템 ===
     [HarmonyPatch(typeof(Health), "Hurt")]
     public static class Health_Hurt_DamageMult_Patch
     {
+        // 아머 흡수량을 Prefix→Postfix로 전달
         [HarmonyPrefix]
-        static void Prefix(Health __instance, object damageInfo)
+        static void Prefix(Health __instance, object damageInfo, ref float __state)
         {
+            __state = 0f; // 아머가 흡수할 데미지량
+
             try
             {
                 if (damageInfo == null) return;
 
-                // 공격자 찾기
                 var bf = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+                var dmgField = damageInfo.GetType().GetField("damageValue", bf);
                 var attackerField = damageInfo.GetType().GetField("fromCharacter", bf);
-                if (attackerField == null) return;
 
-                var attacker = attackerField.GetValue(damageInfo) as CharacterMainControl;
-                if (attacker == null || attacker == CharacterMainControl.Main) return;
-
-                // 공격자에 아키타입 마커가 있는지 확인
-                var marker = attacker.GetComponent<ArchetypeMarker>();
-                if (marker == null || marker.Stats == null) return;
-
-                // 데미지 배율 적용
-                if (marker.Stats.DamageMult != 1f)
+                // 1) 적이 플레이어를 공격: 아키타입 데미지 배율 적용
+                if (attackerField != null)
                 {
-                    var dmgField = damageInfo.GetType().GetField("damageValue", bf);
-                    if (dmgField != null)
+                    var attacker = attackerField.GetValue(damageInfo) as CharacterMainControl;
+                    if (attacker != null && attacker != CharacterMainControl.Main)
                     {
-                        float currentDmg = (float)dmgField.GetValue(damageInfo);
-                        dmgField.SetValue(damageInfo, currentDmg * marker.Stats.DamageMult);
+                        var marker = attacker.GetComponent<ArchetypeMarker>();
+                        if (marker != null && marker.Stats != null && marker.Stats.DamageMult != 1f && dmgField != null)
+                        {
+                            float currentDmg = (float)dmgField.GetValue(damageInfo);
+                            dmgField.SetValue(damageInfo, currentDmg * marker.Stats.DamageMult);
+                        }
                     }
                 }
+
+                // 2) 플레이어가 적을 공격: 아머 흡수량 계산
+                var victim = __instance.GetComponent<CharacterMainControl>();
+                if (victim != null && victim != CharacterMainControl.Main)
+                {
+                    var marker = victim.GetComponent<ArchetypeMarker>();
+                    if (marker != null && marker.HasArmor && dmgField != null)
+                    {
+                        float currentDmg = (float)dmgField.GetValue(damageInfo);
+                        float absorbed = Mathf.Min(currentDmg, marker.CurrentArmor);
+                        marker.CurrentArmor -= absorbed;
+                        __state = absorbed; // Postfix에서 체력 복구할 양
+                    }
+                }
+            }
+            catch { }
+        }
+
+        // 아머가 흡수한 만큼 체력 복구 (데미지 무효화)
+        [HarmonyPostfix]
+        static void Postfix(Health __instance, float __state)
+        {
+            try
+            {
+                if (__state <= 0f) return;
+                if (__instance == null || __instance.IsDead) return;
+
+                // 아머가 흡수한 만큼 즉시 체력 복구
+                __instance.AddHealth(__state);
             }
             catch { }
         }
