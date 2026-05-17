@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFramework>netstandard2.1</TargetFramework>
+		<Nullable>enable</Nullable>
+		<DuckovPath>C:\Program Files (x86)\Steam\steamapps\common\Escape from Duckov</DuckovPath>
+		<SubPath>\Duckov_Data\Managed\</SubPath>
+		<AssemblyName>DivisionArchetypes</AssemblyName>
+		<RootNamespace>DivisionArchetypes</RootNamespace>
+		<LangVersion>default</LangVersion>
+		<ModDir>DivisionArchetypes</ModDir>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<Reference Include="$(DuckovPath)$(SubPath)TeamSoda.*" />
+		<Reference Include="$(DuckovPath)$(SubPath)ItemStatsSystem.dll" />
+		<Reference Include="$(DuckovPath)$(SubPath)Assembly-CSharp.dll" />
+		<Reference Include="$(DuckovPath)$(SubPath)Unity*" />
+		<Reference Include="$(DuckovPath)\BepInEx\core\0Harmony.dll" />
+	</ItemGroup>
+	
+	<Target Name="CopyModFiles" AfterTargets="Build">
+		<Copy SourceFiles="info.ini" DestinationFolder="$(DuckovPath)\Duckov_Data\Mods\$(ModDir)" />
+		<ItemGroup>
+			<ModFiles Include="$(TargetDir)$(AssemblyName).dll" />
+			<ModFiles Include="$(TargetDir)$(AssemblyName).pdb" />
+		</ItemGroup>
+		<Copy SourceFiles="@(ModFiles)"
+			DestinationFolder="$(DuckovPath)\Duckov_Data\Mods\$(ModDir)"
+			SkipUnchangedFiles="false" />
+		<Message Text="[DivisionArchetypes] Mod copied." Importance="high" />
+	</Target>
+</Project>
