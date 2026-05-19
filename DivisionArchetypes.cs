@@ -959,7 +959,9 @@ namespace DivisionArchetypes
     [HarmonyPatch(typeof(Health), "Hurt")]
     public static class Health_Hurt_DamageMult_Patch
     {
+        // 우선순위를 낮게 설정 (다른 모드가 먼저 실행되도록)
         [HarmonyPrefix]
+        [HarmonyPriority(Priority.Low)]
         static bool Prefix(Health __instance, object damageInfo)
         {
             try
@@ -985,7 +987,7 @@ namespace DivisionArchetypes
                     }
                 }
 
-                // 아머 시스템: 아머가 남아있으면 Hurt 차단
+                // 아머 시스템: 아머가 남아있으면 데미지를 0으로 (Hurt는 실행되게 둠)
                 var victim = __instance.GetComponent<CharacterMainControl>();
                 if (victim != null && victim != CharacterMainControl.Main)
                 {
@@ -997,20 +999,14 @@ namespace DivisionArchetypes
                         marker.CurrentArmor -= absorbed;
                         float remaining = currentDmg - absorbed;
 
-                        if (remaining <= 0f)
-                        {
-                            return false; // 아머가 전부 흡수, HP 무피해
-                        }
-                        else
-                        {
-                            dmgField.SetValue(damageInfo, remaining);
-                        }
+                        // 데미지를 남은 양으로 설정 (0이면 HP 안 깎임)
+                        dmgField.SetValue(damageInfo, remaining);
                     }
                 }
             }
             catch { }
 
-            return true;
+            return true; // 항상 Hurt 실행 허용 (다른 모드 패치도 실행되도록)
         }
     }
 }
