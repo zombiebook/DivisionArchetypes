@@ -845,7 +845,7 @@ namespace DivisionArchetypes
             if (_nameStyle == null)
             {
                 _nameStyle = new GUIStyle(GUI.skin.label);
-                _nameStyle.fontSize = 11;
+                _nameStyle.fontSize = 14;
                 _nameStyle.fontStyle = FontStyle.Bold;
                 _nameStyle.alignment = TextAnchor.MiddleLeft;
             }
@@ -856,29 +856,43 @@ namespace DivisionArchetypes
             Camera cam = Camera.main;
             if (cam == null) return;
 
+            // 프레임 드랍 방지: 최대 10개만 표시
+            int displayed = 0;
             var markers = ArchetypeMarker.AllMarkers;
-            foreach (var marker in markers)
+            for (int i = 0; i < markers.Count; i++)
             {
+                if (displayed >= 10) break;
+
+                var marker = markers[i];
                 if (marker == null || marker.Stats == null) continue;
 
                 var character = marker.GetComponent<CharacterMainControl>();
                 if (character == null || character.Health == null || character.Health.IsDead) continue;
 
                 float dist = Vector3.Distance(player.transform.position, marker.transform.position);
-                if (dist > 40f) continue;
+                if (dist > 30f) continue;
 
                 // HP바 위치 기준 (머리 위)
                 Vector3 worldPos = marker.transform.position + Vector3.up * 2.0f;
                 Vector3 screenPos = cam.WorldToScreenPoint(worldPos);
+
+                // 카메라 뒤 또는 화면 밖이면 스킵
                 if (screenPos.z < 0) continue;
+                if (screenPos.x < 0 || screenPos.x > Screen.width) continue;
+                if (screenPos.y < 0 || screenPos.y > Screen.height) continue;
+
+                // 시야 체크: 카메라 forward와 적 방향 각도
+                Vector3 dirToEnemy = (marker.transform.position - cam.transform.position).normalized;
+                float angle = Vector3.Angle(cam.transform.forward, dirToEnemy);
+                if (angle > 60f) continue; // 시야 60도 밖이면 안 보임
 
                 float x = screenPos.x;
                 float y = Screen.height - screenPos.y;
 
                 // 거리에 따른 스케일
-                float scale = Mathf.Clamp(1f - (dist / 40f), 0.4f, 1f);
-                int iconSize = (int)(24 * scale);
-                int fontSize = (int)(12 * scale);
+                float scale = Mathf.Clamp(1f - (dist / 30f), 0.5f, 1f);
+                int iconSize = (int)(26 * scale);
+                int fontSize = (int)(16 * scale);
 
                 // === HP바 왼쪽에 아이콘 배치 ===
                 float iconX = x - 60 * scale;
@@ -896,11 +910,13 @@ namespace DivisionArchetypes
                     GUI.DrawTexture(new Rect(iconX, iconY, iconSize, iconSize), iconTex);
                 }
 
-                // 아키타입 이름 (아이콘 오른쪽)
+                // 아키타입 이름 (아이콘 오른쪽) - 더 큰 글씨
                 _nameStyle.fontSize = fontSize;
                 _nameStyle.normal.textColor = marker.Stats.GlowColor;
-                GUI.Label(new Rect(iconX + iconSize + 4, iconY + 2, 80 * scale, iconSize),
+                GUI.Label(new Rect(iconX + iconSize + 4, iconY, 100 * scale, iconSize),
                     marker.Type.ToString(), _nameStyle);
+
+                displayed++;
 
                 // === 아머바 표시 (하얀 점선, HP바 위) ===
                 if (marker.MaxArmor > 0f && marker.CurrentArmor > 0f)
@@ -925,9 +941,9 @@ namespace DivisionArchetypes
                     Color armorColor = new Color(1f, 1f, 1f, 0.9f);
                     Texture2D whiteTex = Texture2D.whiteTexture;
 
-                    for (int i = 0; i < filledSegments && i < segments; i++)
+                    for (int s = 0; s < filledSegments && s < segments; s++)
                     {
-                        float segX = barX + i * segWidth + gap * 0.5f;
+                        float segX = barX + s * segWidth + gap * 0.5f;
                         float segW = segWidth - gap;
                         if (segW < 1f) segW = 1f;
 
